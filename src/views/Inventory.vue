@@ -31,6 +31,9 @@
     <div class="bag-section">
       <div class="bag-header">
         <h3 class="section-title">背包 ({{ player.inventoryCount }}/{{ player.maxInventory }})</h3>
+        <button class="decompose-all-btn" @click="decomposeAll" v-if="hasDecomposable">
+          🔨 一键分解
+        </button>
       </div>
       <div class="bag-grid">
         <div v-for="(inv, i) in filteredItems" :key="i" class="bag-item"
@@ -78,6 +81,7 @@
         <div class="detail-actions">
           <button v-if="selectedItem.type === 'equip'" @click="equipSelected">装备</button>
           <button v-else-if="selectedItem.type === 'pill' || selectedItem.type === 'talisman'" @click="useSelected">使用</button>
+          <button class="decompose" v-if="selectedItem.type === 'equip' || selectedItem.type === 'material'" @click="decomposeSelected">🔨 分解</button>
           <button class="sell" @click="sellSelected">出售 ({{ selectedItem.item.price || 10 }}💎)</button>
           <button class="close" @click="selectedItem = null">关闭</button>
         </div>
@@ -144,6 +148,25 @@ function sellSelected() {
 
 function unequip(slotId) {
   player.unequipItem(slotId)
+}
+
+const hasDecomposable = computed(() => {
+  return player.inventory.some(i => i.type === 'equip' && i.item.quality === 'common' || i.type === 'equip' && i.item.quality === 'fine')
+})
+
+function decomposeSelected() {
+  if (selectedItem.value) {
+    const result = player.decomposeItem(selectedItem.value.item.id)
+    if (result.success) {
+      selectedItem.value = null
+    }
+  }
+}
+
+function decomposeAll() {
+  if (confirm('确定要分解所有凡品和良品装备吗？')) {
+    player.decomposeAll(true)
+  }
 }
 </script>
 
@@ -402,5 +425,22 @@ function unequip(slotId) {
   background: #2a2540;
   border-color: #4a4060;
   color: #a098a8;
+}
+
+.detail-actions .decompose {
+  background: linear-gradient(135deg, #4a3a2a, #6a5a4a);
+  border-color: #8a7a6a;
+  color: #f0e0d0;
+}
+
+.decompose-all-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid #8a7a6a;
+  background: linear-gradient(135deg, #4a3a2a, #6a5a4a);
+  color: #f0e0d0;
+  cursor: pointer;
 }
 </style>

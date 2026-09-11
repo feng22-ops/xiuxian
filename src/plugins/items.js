@@ -24,13 +24,42 @@ export const TALISMANS = [
 
 // ========== 材料 ==========
 export const MATERIALS = [
-  { id: 'lingcao_low', name: '百年灵草', grade: '普通', description: '炼丹的基础材料。', price: 10, dropRate: 0.4 },
-  { id: 'lingcao_mid', name: '千年灵草', grade: '稀有', description: '炼制中品丹药的材料。', price: 50, dropRate: 0.15 },
-  { id: 'yaogu_low', name: '低级妖骨', grade: '普通', description: '炼器材料。', price: 15, dropRate: 0.35 },
-  { id: 'yaogu_mid', name: '中级妖骨', grade: '稀有', description: '炼制精良装备的材料。', price: 80, dropRate: 0.12 },
-  { id: 'jingpo', name: '妖兽精魄', grade: '稀有', description: '蕴含妖兽之力，可用于装备强化。', price: 120, dropRate: 0.08 },
-  { id: 'tianshu', name: '天书残页', grade: '史诗', description: '上古功法的残页，收集可参悟高阶功法。', price: 500, dropRate: 0.02 }
+  // 普通材料
+  { id: 'lingcao_low', name: '百年灵草', grade: '普通', description: '炼丹的基础材料。', price: 10, dropRate: 0.4, category: 'herb' },
+  { id: 'lingcao_mid', name: '千年灵草', grade: '稀有', description: '炼制中品丹药的材料。', price: 50, dropRate: 0.15, category: 'herb' },
+  { id: 'yaogu_low', name: '低级妖骨', grade: '普通', description: '炼器材料。', price: 15, dropRate: 0.35, category: 'bone' },
+  { id: 'yaogu_mid', name: '中级妖骨', grade: '稀有', description: '炼制精良装备的材料。', price: 80, dropRate: 0.12, category: 'bone' },
+  { id: 'jingpo', name: '妖兽精魄', grade: '稀有', description: '蕴含妖兽之力，可用于装备强化。', price: 120, dropRate: 0.08, category: 'soul' },
+  { id: 'tianshu', name: '天书残页', grade: '史诗', description: '上古功法的残页，收集可参悟高阶功法。', price: 500, dropRate: 0.02, category: 'misc' },
+  // 锻造材料
+  { id: 'jingtie', name: '精铁', grade: '普通', description: '最基础的锻造材料，用于装备初期升级。', price: 20, dropRate: 0.3, category: 'forge' },
+  { id: 'xuantie', name: '玄铁', grade: '稀有', description: '坚硬的锻造材料，用于装备中期升级。', price: 80, dropRate: 0.12, category: 'forge' },
+  { id: 'lingjing', name: '灵晶', grade: '稀有', description: '蕴含灵气的晶体，用于装备进阶。', price: 150, dropRate: 0.08, category: 'forge' },
+  { id: 'wujin', name: '乌金', grade: '史诗', description: '稀有的锻造材料，用于装备高级升级。', price: 400, dropRate: 0.03, category: 'forge' },
+  { id: 'shengtie', name: '陨铁', grade: '史诗', description: '从天而降的神铁，用于装备顶级升级。', price: 800, dropRate: 0.015, category: 'forge' },
+  { id: 'longjin', name: '龙筋', grade: '传说', description: '传说中龙的筋络，可大幅提升装备属性。', price: 2000, dropRate: 0.005, category: 'forge' }
 ]
+
+// 锻造材料等级映射（装备等级越高，需要的材料越好）
+export const FORGE_MATERIALS_BY_LEVEL = [
+  { maxLevel: 5, material: 'jingtie', amount: 2 },
+  { maxLevel: 10, material: 'jingtie', amount: 4 },
+  { maxLevel: 15, material: 'xuantie', amount: 3 },
+  { maxLevel: 20, material: 'xuantie', amount: 5 },
+  { maxLevel: 30, material: 'lingjing', amount: 4 },
+  { maxLevel: 40, material: 'wujin', amount: 3 },
+  { maxLevel: 60, material: 'shengtie', amount: 3 },
+  { maxLevel: 999, material: 'longjin', amount: 2 }
+]
+
+// 装备分解获得材料（按品质）
+export const DECOMPOSE_REWARDS = {
+  common: { jingtie: 1, stone: 5 },
+  fine: { jingtie: 2, xuantie: 0, stone: 15 },
+  rare: { jingtie: 3, xuantie: 1, stone: 40 },
+  epic: { jingtie: 4, xuantie: 2, lingjing: 1, stone: 100 },
+  legendary: { xuantie: 3, lingjing: 2, wujin: 1, stone: 300 }
+}
 
 // ========== 装备 ==========
 // 装备槽位
@@ -52,20 +81,33 @@ export const EQUIP_QUALITIES = [
 // 装备主属性模板
 export const EQUIP_TEMPLATES = {
   weapon: [
-    { name: '剑', atkMult: 1.2, speedMult: 1.0 },
-    { name: '刀', atkMult: 1.4, speedMult: 0.85 },
+    { name: '剑', atkMult: 1.2, speedMult: 1.0, critBonus: 0.02 },
+    { name: '刀', atkMult: 1.4, speedMult: 0.85, critDamageBonus: 0.1 },
     { name: '杖', atkMult: 1.0, speedMult: 1.1, cultBonus: 0.05 },
-    { name: '幡', atkMult: 0.9, speedMult: 1.0, hpBonus: 0.1 }
+    { name: '幡', atkMult: 0.9, speedMult: 1.0, hpBonus: 0.1 },
+    { name: '枪', atkMult: 1.3, speedMult: 1.1, critBonus: 0.03 },
+    { name: '棍', atkMult: 1.1, speedMult: 0.9, defBonus: 0.1 },
+    { name: '鞭', atkMult: 1.0, speedMult: 1.3, stunBonus: 0.03 },
+    { name: '爪', atkMult: 1.25, speedMult: 1.2, vampireBonus: 0.03 },
+    { name: '扇', atkMult: 0.95, speedMult: 1.15, dodgeBonus: 0.03 },
+    { name: '琴', atkMult: 0.85, speedMult: 1.0, comboBonus: 0.05 },
+    { name: '印', atkMult: 1.1, speedMult: 0.8, hpBonus: 0.15 },
+    { name: '塔', atkMult: 1.0, speedMult: 0.7, defBonus: 0.2 }
   ],
   armor: [
     { name: '袍', defMult: 1.0, hpMult: 1.2, speedMult: 1.05 },
     { name: '甲', defMult: 1.4, hpMult: 1.0, speedMult: 0.9 },
-    { name: '衣', defMult: 0.8, hpMult: 1.1, speedMult: 1.15, dodgeBonus: 0.03 }
+    { name: '衣', defMult: 0.8, hpMult: 1.1, speedMult: 1.15, dodgeBonus: 0.03 },
+    { name: '铠', defMult: 1.6, hpMult: 1.1, speedMult: 0.8 },
+    { name: '衫', defMult: 0.9, hpMult: 1.0, speedMult: 1.2, cultBonus: 0.03 }
   ],
   accessory: [
     { name: '戒指', atkMult: 0.5, defMult: 0.3, hpMult: 0.3 },
     { name: '项链', hpMult: 0.8, defMult: 0.2, cultBonus: 0.03 },
-    { name: '玉佩', defMult: 0.5, hpMult: 0.5, luckBonus: 1 }
+    { name: '玉佩', defMult: 0.5, hpMult: 0.5, luckBonus: 1 },
+    { name: '手镯', atkMult: 0.4, defMult: 0.4, hpMult: 0.4 },
+    { name: '腰带', hpMult: 0.6, defMult: 0.3, speedBonus: 0.02 },
+    { name: '护符', atkMult: 0.3, defMult: 0.3, hpMult: 0.3, critBonus: 0.02 }
   ]
 }
 
@@ -129,6 +171,14 @@ export function generateEquip(slot, realmId, depth = 1, luck = 1) {
     cultBonus: template.cultBonus || 0,
     luckBonus: template.luckBonus || 0,
     dodgeBonus: template.dodgeBonus || 0,
+    critBonus: template.critBonus || 0,
+    critDamageBonus: template.critDamageBonus || 0,
+    stunBonus: template.stunBonus || 0,
+    vampireBonus: template.vampireBonus || 0,
+    comboBonus: template.comboBonus || 0,
+    defBonus: template.defBonus || 0,
+    hpBonus: template.hpBonus || 0,
+    speedBonus: template.speedBonus || 0,
     level: 0,
     price: Math.floor((baseAtk + baseDef + baseHp) * quality.mult * 2)
   }

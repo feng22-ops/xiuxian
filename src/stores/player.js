@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { getRealmInfo, getNextRealm, getBreakthroughRate, REALMS } from '../plugins/realm.js'
 import { getTechniqueById, TECHNIQUES } from '../plugins/techniques.js'
-import { generateEquip, getItemById, PILLS, TALISMANS, rollLootTable, EQUIP_SLOTS } from '../plugins/items.js'
+import { generateEquip, getItemById, PILLS, TALISMANS, rollLootTable, EQUIP_SLOTS, DECOMPOSE_REWARDS, FORGE_MATERIALS_BY_LEVEL, MATERIALS } from '../plugins/items.js'
 import { generateMonster } from '../plugins/monsters.js'
 import { executeBattleTurn } from '../plugins/combat.js'
 import { generateDungeonFloor, DUNGEON_CONFIGS, DUNGEON_EVENTS } from '../plugins/dungeon.js'
@@ -64,6 +64,16 @@ export const usePlayerStore = defineStore('player', {
     inBattle: false,
     currentMonster: null,
     battleLog: [],
+    // 自动战斗
+    autoBattle: false,
+    autoBattleConfig: {
+      autoUsePill: true, // 自动使用回血丹
+      autoNextRoom: true, // 自动进入下一个房间
+      autoNextFloor: true, // 自动下一层
+      lowHpThreshold: 0.3, // 血量低于30%时自动吃药
+      fleeOnLowHp: false // 血量过低时自动逃跑
+    },
+    _autoBattleTimer: null,
     // 增益效果
     activeBuffs: [], // {type, value, duration, name}
     // 统计
@@ -578,16 +588,111 @@ export const usePlayerStore = defineStore('player', {
       this.cultivation += monster.expReward
       this.battleLog.push(`获得 ${monster.stoneReward} 灵石，${monster.expReward} 修为`)
       
-      // 掉落
-      const loot = rollLootTable(this.dungeonDepth, this.realmId, this.luck)
-      loot.items.forEach(i => {
-        this.addItem(i.item || i, i.type, i.quantity)
-        this.battleLog.push(`获得了 ${i.item ? i.item.name : i.name} x${i.quantity}`)
-      })
+      // 普通怪：高概率掉材料
+      if (!monster.isElite && !monster.isBoss) {
+        // 锻造材料掉落（60%概率）
+        if (Math.random() < 0.6) {
+          const forgeMats = MATERIALS.filter(m => m.category === 'forge')
+          // 根据深度决定材料等级
+          const maxTier = Math.min(forgeMats.length, 1 + Math.floor(this.dungeonDepth / 3))
+          const mat = forgeMats[Math.floor(Math.random() * maxTier)]
+          const qty = 1 + Math.floor(Math.random() * 2)
+          this.addItem(mat, 'material', qty)
+          this.battleLog.push(`获得了 ${mat.name} x${qty}`)
+        }
+        // 普通材料掉落（40%概率）
+        if (Math.random() < 0.4) {
+          const normalMats = MATERIALS.filter(m => m.category !== 'forge')
+          const mat = normalMats[Math.floor(Math.random() * normalMats.length)]
+          if (Math.random() < mat.dropRate * 2) {
+            const qty = 1 + Math.floor(Math.random() * 3)
+            this.addItem(mat, 'material', qty)
+            this.battleLog.push(`获得了 ${mat.name} x${qty}`)
+          }
+        }
+        // 丹药/符箓掉落
+        const loot = rollLootTable(this.dungeonDepth, this.realmId, this.luck)
+        loot.items.forEach(i => {
+          this.addItem(i.item || i, i.type, i.quantity)
+          this.battleLog.push(`获得了 ${i.item ? i.item.name : i.name} x${i.quantity}`)
+        })
+      }
       
-      // 装备掉落（精英和BOSS更高概率）
-      const equipChance = monster.isBoss ? 0.9 : (monster.isElite ? 0.5 : 0.15)
-      if (Math.random() < equipChance) {
+      // 精英怪：必掉装备 + 材料
+      if (monster.isElite) {
+        // 必掉装备
+        const slots = ['weapon', 'armor', 'accessory']
+        const slot = slots[Math.floor(Math.random() * slots.length)]
+        const equip = generateEquip(slot, this.realmId, this.dungeonDepth, this.luck)
+        // 精英保底良品以上
+        if (equip.quality === 'common') {
+          equip.quality = 'fine'
+          equip.qualityName = '良品'
+          equip.color = '#22c55e'
+        }
+        this.addItem(equip, 'equip', 1)
+        this.battleLog.push(`获得装备：${equip.name}！`)
+        
+        // 额外材料
+        const forgeMats = MATERIALS.filter(m => m.category === 'forge')
+        const maxTier = Math.min(forgeMats.length, 2 + Math.floor(this.dungeonDepth / 3))
+        const mat = forgeMats[Math.floor(Math.random() * maxTier)]
+        const qty = 2 + Math.floor(Math.random() * 3)
+        this.addItem(mat, 'material', qty)
+        this.battleLog.push(`获得了 ${mat.name} x${qty}`)
+      }
+      
+      // BOSS：必掉强力装备 + 大量材料
+      if (monster.isBoss) {
+        // 必掉武器（BOSS专属）
+        const equip = generateEquip('weapon', this.realmId, this.dungeonDepth, this.luck + 5)
+        // BOSS保底上品以上
+        const qualityOrder = ['common', 'fine', 'rare', 'epic', 'legendary']
+        const qualityNames = { common: '凡品', fine: '良品', rare: '上品', epic: '极品', legendary: '仙品' }
+        const qualityColors = { common: '#9ca3af', fine: '#22c55e', rare: '#3b82f6', epic: '#a855f7', legendary: '#f59e0b' }
+        const currentIdx = qualityOrder.indexOf(equip.quality)
+        if (currentIdx < 2) {
+          equip.quality = 'rare'
+          equip.qualityName = qualityNames['rare']
+          equip.color = qualityColors['rare']
+        }
+        // BOSS有30%概率掉极品，10%概率掉仙品
+        const bossRoll = Math.random()
+        if (bossRoll < 0.1) {
+          equip.quality = 'legendary'
+          equip.qualityName = qualityNames['legendary']
+          equip.color = qualityColors['legendary']
+        } else if (bossRoll < 0.4) {
+          equip.quality = 'epic'
+          equip.qualityName = qualityNames['epic']
+          equip.color = qualityColors['epic']
+        }
+        // BOSS装备属性加成
+        equip.mainStats.atk = Math.floor(equip.mainStats.atk * 1.3)
+        equip.mainStats.def = Math.floor(equip.mainStats.def * 1.2)
+        equip.mainStats.hp = Math.floor(equip.mainStats.hp * 1.2)
+        equip.name = `【BOSS掉落】${equip.name}`
+        this.addItem(equip, 'equip', 1)
+        this.battleLog.push(`🎉 BOSS掉落强力装备：${equip.name}！`)
+        
+        // 大量锻造材料
+        const forgeMats = MATERIALS.filter(m => m.category === 'forge')
+        const maxTier = Math.min(forgeMats.length, 3 + Math.floor(this.dungeonDepth / 2))
+        for (let i = 0; i < 2; i++) {
+          const mat = forgeMats[Math.floor(Math.random() * maxTier)]
+          const qty = 3 + Math.floor(Math.random() * 5)
+          this.addItem(mat, 'material', qty)
+          this.battleLog.push(`获得了 ${mat.name} x${qty}`)
+        }
+        
+        // 额外灵石奖励
+        const bonusStone = monster.stoneReward * 2
+        this.spiritStones += bonusStone
+        this.battleLog.push(`BOSS额外奖励：${bonusStone} 灵石`)
+      }
+      
+      // 普通怪低概率掉装备（15%）
+      if (!monster.isElite && !monster.isBoss && Math.random() < 0.15) {
         const slots = ['weapon', 'armor', 'accessory']
         const slot = slots[Math.floor(Math.random() * slots.length)]
         const equip = generateEquip(slot, this.realmId, this.dungeonDepth, this.luck)
@@ -633,7 +738,250 @@ export const usePlayerStore = defineStore('player', {
       this.currentDungeon = null
       this.currentFloor = null
       this.statusEffects = []
+      this.autoBattle = false
+      this.stopAutoBattleLoop()
       this.addLog('你从地牢中被传送回了安全区域...')
+    },
+
+    // ========== 自动战斗 ==========
+    toggleAutoBattle() {
+      this.autoBattle = !this.autoBattle
+      if (this.autoBattle) {
+        this.startAutoBattleLoop()
+        this.addLog('自动战斗已开启')
+      } else {
+        this.stopAutoBattleLoop()
+        this.addLog('自动战斗已关闭')
+      }
+    },
+
+    startAutoBattleLoop() {
+      if (this._autoBattleTimer) clearInterval(this._autoBattleTimer)
+      this._autoBattleTimer = setInterval(() => {
+        this.autoBattleTick()
+      }, 800)
+    },
+
+    stopAutoBattleLoop() {
+      if (this._autoBattleTimer) {
+        clearInterval(this._autoBattleTimer)
+        this._autoBattleTimer = null
+      }
+    },
+
+    autoBattleTick() {
+      if (!this.autoBattle) return
+      
+      // 战斗中：自动攻击
+      if (this.inBattle && this.currentMonster) {
+        // 血量低时自动吃药
+        if (this.autoBattleConfig.autoUsePill && this.hp / this.maxHp < this.autoBattleConfig.lowHpThreshold) {
+          const healPill = this.inventory.find(i => i.type === 'pill' && i.item.effect?.type === 'heal')
+          if (healPill) {
+            this.useItem(healPill.item.id)
+            return
+          }
+        }
+        // 血量过低时自动逃跑
+        if (this.autoBattleConfig.fleeOnLowHp && this.hp / this.maxHp < 0.15) {
+          this.tryFlee()
+          return
+        }
+        this.playerAttack()
+        return
+      }
+      
+      // 在地牢中但不在战斗：自动进入下一个房间
+      if (this.inDungeon && this.currentFloor && this.autoBattleConfig.autoNextRoom) {
+        // 检查是否可以下一层
+        if (this.canGoNextFloor() && this.autoBattleConfig.autoNextFloor) {
+          this.nextFloor()
+          return
+        }
+        // 找一个未清理的房间进入
+        const nextRoom = this.currentFloor.rooms.find(r => !r.cleared)
+        if (nextRoom) {
+          const idx = this.currentFloor.rooms.indexOf(nextRoom)
+          // 优先打战斗房间，跳过商店/休息（除非需要）
+          if (nextRoom.type === 'battle' || nextRoom.type === 'elite' || nextRoom.type === 'boss') {
+            this.enterRoom(idx)
+          } else if (nextRoom.type === 'rest' && this.hp / this.maxHp < 0.5) {
+            this.enterRoom(idx)
+          } else if (nextRoom.type === 'treasure' || nextRoom.type === 'event') {
+            this.enterRoom(idx)
+          } else {
+            // 跳过不需要的房间，标记为已清理
+            nextRoom.cleared = true
+            this.checkFloorCleared()
+          }
+        }
+      }
+    },
+
+    // ========== 装备分解 ==========
+    decomposeItem(itemId) {
+      const idx = this.inventory.findIndex(i => i.item.id === itemId)
+      if (idx < 0) return { success: false, reason: '物品不存在' }
+      
+      const invItem = this.inventory[idx]
+      let rewards = {}
+      
+      if (invItem.type === 'equip') {
+        rewards = { ...DECOMPOSE_REWARDS[invItem.item.quality] }
+        // 装备等级越高，分解获得更多材料
+        const levelBonus = invItem.item.level || 0
+        Object.keys(rewards).forEach(k => {
+          if (k !== 'stone') rewards[k] = Math.floor(rewards[k] * (1 + levelBonus * 0.1))
+        })
+      } else if (invItem.type === 'material') {
+        // 材料分解成灵石
+        rewards = { stone: invItem.item.price || 10 }
+      } else {
+        return { success: false, reason: '该物品无法分解' }
+      }
+      
+      // 发放奖励
+      Object.entries(rewards).forEach(([key, value]) => {
+        if (key === 'stone') {
+          this.spiritStones += value
+        } else {
+          const mat = MATERIALS.find(m => m.id === key)
+          if (mat) this.addItem(mat, 'material', value)
+        }
+      })
+      
+      // 移除物品
+      this.inventory.splice(idx, 1)
+      
+      const rewardText = Object.entries(rewards).map(([k, v]) => {
+        if (k === 'stone') return `${v}灵石`
+        const mat = MATERIALS.find(m => m.id === k)
+        return `${v}${mat?.name || k}`
+      }).join('，')
+      
+      this.addLog(`分解了 ${invItem.item.name}，获得 ${rewardText}`)
+      return { success: true, rewards }
+    },
+
+    decomposeAll(onlyLowQuality = true) {
+      const toDecompose = []
+      this.inventory.forEach((inv, idx) => {
+        if (inv.type === 'equip') {
+          // 只分解凡品和良品，或者所有未装备的
+          if (!onlyLowQuality || inv.item.quality === 'common' || inv.item.quality === 'fine') {
+            // 检查是否已装备
+            const isEquipped = Object.values(this.equipped).some(e => e && e.id === inv.item.id)
+            if (!isEquipped) toDecompose.push(inv.item.id)
+          }
+        }
+      })
+      
+      if (toDecompose.length === 0) {
+        return { success: false, reason: '没有可分解的装备' }
+      }
+      
+      let totalRewards = {}
+      toDecompose.forEach(id => {
+        const result = this.decomposeItem(id)
+        if (result.success) {
+          Object.entries(result.rewards).forEach(([k, v]) => {
+            totalRewards[k] = (totalRewards[k] || 0) + v
+          })
+        }
+      })
+      
+      this.addLog(`一键分解了 ${toDecompose.length} 件装备`)
+      return { success: true, count: toDecompose.length, rewards: totalRewards }
+    },
+
+    // ========== 工匠锻造 ==========
+    getForgeCost(equip) {
+      if (!equip) return null
+      const level = equip.level || 0
+      const qualityMult = { common: 1, fine: 1.5, rare: 2, epic: 3, legendary: 5 }[equip.quality] || 1
+      
+      const matConfig = FORGE_MATERIALS_BY_LEVEL.find(m => level < m.maxLevel) || FORGE_MATERIALS_BY_LEVEL[FORGE_MATERIALS_BY_LEVEL.length - 1]
+      const amount = Math.ceil(matConfig.amount * qualityMult * (1 + level * 0.05))
+      const stoneCost = Math.floor((equip.price || 100) * 0.1 * (1 + level * 0.1))
+      
+      return {
+        material: matConfig.material,
+        materialName: MATERIALS.find(m => m.id === matConfig.material)?.name || matConfig.material,
+        amount,
+        stone: stoneCost,
+        successRate: Math.max(0.3, 1 - level * 0.02)
+      }
+    },
+
+    forgeEquip(equipId) {
+      // 找到装备（背包或已装备）
+      let equip = null
+      let equipSource = null
+      
+      // 先检查已装备
+      for (const [slot, e] of Object.entries(this.equipped)) {
+        if (e && e.id === equipId) {
+          equip = e
+          equipSource = { type: 'equipped', slot }
+          break
+        }
+      }
+      
+      // 再检查背包
+      if (!equip) {
+        const inv = this.inventory.find(i => i.type === 'equip' && i.item.id === equipId)
+        if (inv) {
+          equip = inv.item
+          equipSource = { type: 'inventory' }
+        }
+      }
+      
+      if (!equip) return { success: false, reason: '装备不存在' }
+      
+      const cost = this.getForgeCost(equip)
+      if (!cost) return { success: false, reason: '无法锻造' }
+      
+      // 检查材料
+      const matInv = this.inventory.find(i => i.type === 'material' && i.item.id === cost.material)
+      if (!matInv || matInv.quantity < cost.amount) {
+        return { success: false, reason: `${cost.materialName}不足，需要${cost.amount}个` }
+      }
+      if (this.spiritStones < cost.stone) {
+        return { success: false, reason: `灵石不足，需要${cost.stone}` }
+      }
+      
+      // 消耗材料
+      this.removeItem(cost.material, cost.amount)
+      this.spiritStones -= cost.stone
+      
+      // 判定成功率
+      if (Math.random() < cost.successRate) {
+        // 成功：升级装备
+        equip.level = (equip.level || 0) + 1
+        const levelBonus = 1 + 0.1 // 每级+10%属性
+        equip.mainStats.atk = Math.floor(equip.mainStats.atk * levelBonus)
+        equip.mainStats.def = Math.floor(equip.mainStats.def * levelBonus)
+        equip.mainStats.hp = Math.floor(equip.mainStats.hp * levelBonus)
+        
+        // 副属性也提升
+        if (equip.subStats) {
+          equip.subStats.forEach(s => {
+            if (s.isPercent) {
+              s.value = +(s.value * 1.05).toFixed(3)
+            } else {
+              s.value = Math.floor(s.value * levelBonus)
+            }
+          })
+        }
+        
+        this.recalcStats()
+        this.addLog(`锻造成功！${equip.name} 升至 +${equip.level}`)
+        return { success: true, equip, level: equip.level }
+      } else {
+        // 失败：装备等级不变，材料消失
+        this.addLog(`锻造失败！${equip.name} 保持 +${equip.level || 0}`)
+        return { success: false, reason: '锻造失败', equip }
+      }
     },
 
     checkFloorCleared() {

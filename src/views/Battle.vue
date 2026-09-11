@@ -59,8 +59,19 @@
         </div>
       </div>
 
+      <!-- 自动战斗开关 -->
+      <div class="auto-battle-bar">
+        <button class="auto-battle-btn" :class="{ active: player.autoBattle }" @click="player.toggleAutoBattle()">
+          {{ player.autoBattle ? '⏸ 自动战斗中' : '▶ 开启自动战斗' }}
+        </button>
+        <div class="auto-config" v-if="player.autoBattle">
+          <label><input type="checkbox" v-model="player.autoBattleConfig.autoUsePill"> 自动吃药</label>
+          <label><input type="checkbox" v-model="player.autoBattleConfig.autoNextRoom"> 自动下一间</label>
+        </div>
+      </div>
+
       <!-- 操作按钮 -->
-      <div class="battle-actions">
+      <div class="battle-actions" v-if="!player.autoBattle">
         <button class="action-btn attack" @click="playerAttack">攻击</button>
         <button class="action-btn defend" @click="playerDefend">防御</button>
         <button class="action-btn item" @click="showItems = !showItems">道具</button>
@@ -324,6 +335,43 @@ function getEffectName(type) {
 .battle-log-line.crit { color: #f0a060; }
 .battle-log-line.heal { color: #60c880; }
 .battle-log-line.dmg { color: #e88080; }
+
+.auto-battle-bar {
+  margin-bottom: 8px;
+}
+.auto-battle-btn {
+  width: 100%;
+  padding: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 2px solid #4a5568;
+  background: #2d3748;
+  color: #a0aec0;
+  cursor: pointer;
+}
+.auto-battle-btn.active {
+  background: linear-gradient(135deg, #2d6a4f, #40916c);
+  border-color: #52b788;
+  color: #fff;
+  animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+.auto-config {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #a0aec0;
+}
+.auto-config label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 
 .battle-actions {
   display: grid;

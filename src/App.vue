@@ -51,6 +51,10 @@
         <span class="nav-icon">🎒</span>
         <span class="nav-text">背包</span>
       </router-link>
+      <router-link to="/blacksmith" class="nav-item" :class="{ active: $route.path === '/blacksmith' }">
+        <span class="nav-icon">🔨</span>
+        <span class="nav-text">工匠</span>
+      </router-link>
       <router-link to="/technique" class="nav-item" :class="{ active: $route.path === '/technique' }">
         <span class="nav-icon">📜</span>
         <span class="nav-text">功法</span>
